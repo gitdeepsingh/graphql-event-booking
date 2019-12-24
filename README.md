@@ -1,1 +1,1 @@
-"# graphql-event-booking" 
+# graphql-event-booking
