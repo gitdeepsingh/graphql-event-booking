@@ -3,8 +3,10 @@ const bodyParser = require('body-parser');
 const graphqlHttp = require('express-graphql');
 const { buildSchema } = require('graphql');
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
 const Event = require('./models/events');
+const User = require('./models/user');
 
 const port = 3000;
 const app = express();
@@ -22,11 +24,21 @@ app.use('/graphql', graphqlHttp({
             price: Float!
             date: String!
         }
+        type User {
+            _id: ID!
+            email: String!
+            password: String
+        }
+        
         input EventInput {
             title: String!
             description: String!
             price: Float!
             date: String!
+        }
+        input UserInput {
+            email: String!
+            password: String!
         }
 
         type RootQuery {
@@ -35,6 +47,7 @@ app.use('/graphql', graphqlHttp({
 
         type RootMutation {
             createEvent(eventInput: EventInput): Event
+            createUser(userInput: UserInput): User
         }
 
         schema { 
@@ -62,19 +75,59 @@ app.use('/graphql', graphqlHttp({
                 title: args.eventInput.title,
                 description: args.eventInput.description,
                 price: +args.eventInput.price,
-                date: new Date(args.eventInput.date)
+                date: new Date(args.eventInput.date),
+                creator: '5e051f50ef2f5039e432105c'
             })
+            let createdEvent;
             return event
                 .save()
                 .then(result => {
-                    console.log('event saved: ', result);
-                    return { ...result._doc };
+                    createdEvent = { ...result._doc }
+                    return User.findById('5e051f50ef2f5039e432105c')
+                })
+                .then((user) => {
+                    if (!user) {
+                        throw new Error('Users does not exist!')
+                    }
+                    user.createdEvents.push(event);
+                    return user.save()
+                })
+                .then(() => {
+                    return createdEvent;
                 })
                 .catch(err => {
                     console.log('error saving event to db', err);
                     throw err;
                 })
             return event
+        },
+        createUser: (args) => {
+            return User.findOne({ email: args.userInput.email })
+                .then((user) => {
+                    if (user) {
+                        throw new Error('User exists already.')
+                    }
+                    return bcrypt
+                        .hash(args.userInput.password, 12)
+                })
+                .then((hashedPassword) => {
+                    const user = new User({
+                        email: args.userInput.email,
+                        password: hashedPassword
+                    });
+                    return user.save()
+                        .then(result => {
+                            return { ...result._doc, password: null }
+                        })
+                        .catch(err => {
+                            console.log('error while saving the user', err);
+                        })
+                })
+                .catch(err => {
+                    console.log('error encrypting password', err);
+                    throw err;
+                })
+
         }
     },
     graphiql: true
